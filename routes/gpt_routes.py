@@ -5,19 +5,26 @@ from pydantic import BaseModel
 import os
 import csv
 import openai
+from openai import OpenAI
 
 # Load your OpenAI API key from environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 router = APIRouter()
 
 def load_gpu_data():
     data = []
-    with open("data/gpu_prices.csv", newline="") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            data.append(row)
-    return data
+    try:
+        with open("data/gpu_prices.csv", newline="") as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                data.append(row)
+        return data
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        print(f"Error loading GPU data: {e}")
+        return []
 
 class GPTQuery(BaseModel):
     question: str
@@ -28,22 +35,49 @@ class GPTQuery(BaseModel):
 async def query_gpus_with_gpt(query: GPTQuery):
     # Load and filter data
     gpus = load_gpu_data()
+    
+    if not gpus:
+        raise HTTPException(status_code=404, detail="No GPU data available. Please refresh the data first.")
+    
     filtered = []
     for gpu in gpus:
-        if query.region and gpu.get("region") != query.region:
-            continue
-        if query.max_price and float(gpu.get("price_per_hour", 0)) > query.max_price:
-            continue
+        # Check region/country filter
+        if query.region:
+            region_matched = False
+            if "region" in gpu and gpu["region"] == query.region:
+                region_matched = True
+            elif "country" in gpu and gpu["country"] == query.region:
+                region_matched = True
+                
+            if not region_matched:
+                continue
+                
+        # Check price filter
+        if query.max_price and "price_per_hour" in gpu:
+            try:
+                if float(gpu["price_per_hour"]) > query.max_price:
+                    continue
+            except (ValueError, TypeError):
+                continue
+                
         filtered.append(gpu)
 
     if not filtered:
         raise HTTPException(status_code=404, detail="No GPUs matched your filters.")
 
     # Prepare context string
-    context = "\n".join([
-        f"{gpu['resource_name']}: {gpu['gpu_description']}, ${gpu['price_per_hour']}/hr, {gpu['region']}"
-        for gpu in filtered
-    ])
+    context_items = []
+    for gpu in filtered:
+        # Use resource_name as primary identifier
+        gpu_name = gpu.get('resource_name', 'Unknown GPU')
+        region = gpu.get('region', gpu.get('country', 'Unknown region'))
+        price = gpu.get('price_per_hour', 'N/A')
+        
+        context_items.append(
+            f"{gpu_name}: {gpu.get('operating_system', 'N/A')}, ${price}/hr, {region}"
+        )
+    
+    context = "\n".join(context_items)
 
     prompt = (
         f"You are an expert cloud infrastructure consultant. "
@@ -53,7 +87,7 @@ async def query_gpus_with_gpt(query: GPTQuery):
 
     # Call OpenAI
     try:
-        resp = openai.ChatCompletion.create(
+        resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You provide GPU recommendations based on data."},
@@ -67,7 +101,3 @@ async def query_gpus_with_gpt(query: GPTQuery):
 
     answer = resp.choices[0].message.content
     return {"answer": answer}
-
-# Then in main.py, include:
-# from routes.gpt_routes import router as gpt_router
-# app.include_router(gpt_router, prefix="/gpt", tags=["GPT Queries"])

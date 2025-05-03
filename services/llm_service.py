@@ -69,16 +69,19 @@ def recommend_gpu_with_llm(query, gpu_data, user_preferences=None):
     # Prepare context
     context = []
     for i, gpu in enumerate(gpu_data[:10]):  # Limit to top 10 GPUs for context
-        gpu_desc = f"GPU {i+1}: {gpu.get('gpu_description', 'Unknown GPU')}"
+        # Use resource_name as the primary identifier
+        gpu_name = gpu.get('resource_name', 'Unknown GPU')
+        
         specs = [
             f"vCPUs: {gpu.get('vcpus', 'N/A')}",
             f"RAM: {gpu.get('ram', 'N/A')} GB",
-            f"Region: {gpu.get('region', 'N/A')}",
+            f"Country/Region: {gpu.get('country', gpu.get('region', 'N/A'))}",
+            f"Operating System: {gpu.get('operating_system', 'N/A')}",
             f"Price/hour: ${gpu.get('price_per_hour', 'N/A')}",
             f"Price/month: ${gpu.get('price_per_month', 'N/A')}",
             f"Spot price: ${gpu.get('price_per_spot', 'N/A')}"
         ]
-        context.append(f"{gpu_desc}\n" + "\n".join(specs))
+        context.append(f"GPU {i+1}: {gpu_name}\n" + "\n".join(specs))
     
     gpu_context = "\n\n".join(context)
     
@@ -95,14 +98,13 @@ def recommend_gpu_with_llm(query, gpu_data, user_preferences=None):
         if pref_items:
             preferences_text = "User preferences:\n" + "\n".join(pref_items)
     
-    # Knowledge base info about GPU types
+    # Knowledge base info about common GPUs
     gpu_knowledge = """
     GPU KNOWLEDGE BASE:
-    - A100 GPUs: Designed for AI training and HPC, excellent for large models
-    - A30 GPUs: Balanced for AI training and inference
-    - L4/L40 GPUs: Optimized for AI inference and smaller workloads
-    - RTX A6000: Excellent for rendering and professional visualization
-    - Tensor cores provide acceleration for matrix operations in deep learning
+    - High-end GPUs typically have more VRAM and are better for large ML models
+    - GPUs with more vCPUs generally offer better performance for parallel tasks
+    - Spot instances can be significantly cheaper but may be interrupted
+    - Different regions can have different pricing and availability
     """
     
     # Construct the prompt

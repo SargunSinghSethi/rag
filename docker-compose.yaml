@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+    networks:
+      - gpu-optimizer-network
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db/gpu_recommender
+      - HOST=0.0.0.0
+      - PORT=8000
+
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gpu_recommender
+    ports:
+      - "5432:5432"
+    networks:
+      - gpu-optimizer-network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - gpu-optimizer-network
+
+networks:
+  gpu-optimizer-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

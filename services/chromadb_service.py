@@ -34,14 +34,17 @@ def get_collection():
 
 def format_gpu_document(row):
     """Create a rich text description of the GPU for better semantic search"""
+    # Adapt to actual column names in the CSV
+    gpu_name = row.get('resource_name', 'Unknown')
+    
     # Create a detailed description for embedding
     description = f"""
-    GPU: {row['gpu_description']} 
+    GPU: {gpu_name} 
     Resource class: {row.get('resource_class', 'N/A')}
     vCPUs: {row.get('vcpus', 'N/A')}
     RAM: {row.get('ram', 'N/A')} GB
-    Region: {row.get('region', 'N/A')}
-    Country: {row.get('country', 'N/A')}
+    Country/Region: {row.get('country', row.get('region', 'N/A'))}
+    Operating System: {row.get('operating_system', 'N/A')}
     Price per hour: ${row.get('price_per_hour', 'N/A')}
     Price per month: ${row.get('price_per_month', 'N/A')}
     Spot price: ${row.get('price_per_spot', 'N/A')}
@@ -65,7 +68,15 @@ def index_gpu_data_from_csv(csv_path: str = CSV_PATH):
     df = pd.read_csv(csv_path)
     
     # Skip rows with missing critical data
-    df = df.dropna(subset=['gpu_description', 'price_per_hour'])
+    df = df.dropna(subset=['price_per_hour'])
+    
+    # Map gpu_description if needed
+    if "gpu_description" not in df.columns and "resource_name" in df.columns:
+        df["gpu_description"] = df["resource_name"]
+        
+    # Map region if needed
+    if "region" not in df.columns and "country" in df.columns:
+        df["region"] = df["country"]
     
     # Convert DataFrame to documents for ChromaDB
     docs = []
@@ -111,11 +122,16 @@ def recommend_gpus_by_query(query: str, filters=None, top_k: int = 5):
     where_clause = {}
     if filters:
         if filters.get("region"):
-            where_clause["region"] = filters["region"]
+            # Try both region and country depending on what's available
+            field_name = "region" if "region" in collection.peek()["metadatas"][0] else "country"
+            where_clause[field_name] = filters["region"]
+            
         if filters.get("max_price") is not None:
             where_clause["price_per_hour"] = {"$lte": float(filters["max_price"])}
+            
         if filters.get("min_ram") is not None:
             where_clause["ram"] = {"$gte": float(filters["min_ram"])}
+            
         if filters.get("min_vcpus") is not None:
             where_clause["vcpus"] = {"$gte": int(filters["min_vcpus"])}
     
@@ -154,8 +170,10 @@ def get_unique_regions():
         if results and results["metadatas"]:
             regions = set()
             for metadata in results["metadatas"]:
-                if "region" in metadata:
-                    regions.add(metadata["region"])
+                # Look for both region and country fields
+                region_field = "region" if "region" in metadata else "country"
+                if region_field in metadata:
+                    regions.add(metadata[region_field])
             return list(regions)
         return []
     except Exception:

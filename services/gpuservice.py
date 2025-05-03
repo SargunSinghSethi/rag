@@ -41,10 +41,14 @@ def fetch_live_data():
         entry["price_per_half_year"] = round(monthly_price * 6, 2)
         entry["price_per_year"] = round(monthly_price * 12, 2)
         
-        # Create a resource_name field for easier identification
-        gpu_desc = entry.get("gpu_description", "").strip()
-        resource_class = entry.get("resource_class", "").strip()
-        entry["resource_name"] = f"{resource_class}-{gpu_desc}" if resource_class else gpu_desc
+        # Create a resource_name field if it doesn't exist
+        if "resource_name" not in entry or not entry["resource_name"]:
+            resource_class = entry.get("resource_class", "").strip()
+            entry["resource_name"] = f"{resource_class}" if resource_class else "unknown"
+            
+        # Add gpu_description field if using resource_name instead
+        if "gpu_description" not in entry and "resource_name" in entry:
+            entry["gpu_description"] = entry["resource_name"]
 
     # Write to CSV
     if data:
@@ -68,8 +72,15 @@ def get_all_gpu_data():
     
     try:
         df = pd.read_csv(CSV_PATH)
+        # Ensure gpu_description exists
+        if "gpu_description" not in df.columns and "resource_name" in df.columns:
+            df["gpu_description"] = df["resource_name"]
+        # Use country as region if region doesn't exist
+        if "region" not in df.columns and "country" in df.columns:
+            df["region"] = df["country"]
         return df.to_dict('records')
-    except Exception:
+    except Exception as e:
+        print(f"Error reading GPU data: {e}")
         return []
 
 def filter_gpu_data(filters=None):
@@ -80,13 +91,28 @@ def filter_gpu_data(filters=None):
     try:
         df = pd.read_csv(CSV_PATH)
         
+        # Ensure gpu_description exists
+        if "gpu_description" not in df.columns and "resource_name" in df.columns:
+            df["gpu_description"] = df["resource_name"]
+            
+        # Use country as region if region doesn't exist
+        if "region" not in df.columns and "country" in df.columns:
+            df["region"] = df["country"]
+        
         if filters:
+            # Handle region/country filtering
             if filters.get("region"):
-                df = df[df["region"] == filters["region"]]
+                if "region" in df.columns:
+                    df = df[df["region"] == filters["region"]]
+                elif "country" in df.columns:
+                    df = df[df["country"] == filters["region"]]
+                    
             if filters.get("max_price") is not None:
                 df = df[df["price_per_hour"] <= float(filters["max_price"])]
+                
             if filters.get("min_ram") is not None:
                 df = df[df["ram"] >= float(filters["min_ram"])]
+                
             if filters.get("min_vcpus") is not None:
                 df = df[df["vcpus"] >= int(filters["min_vcpus"])]
                 
@@ -102,8 +128,20 @@ def get_unique_values(field):
         
     try:
         df = pd.read_csv(CSV_PATH)
-        if field in df.columns:
-            return df[field].dropna().unique().tolist()
+        
+        # Map field names if necessary
+        field_mapping = {
+            "region": ["region", "country"],  # Try region first, then country
+            "gpu_description": ["gpu_description", "resource_name"]  # Try gpu_description first, then resource_name
+        }
+        
+        fields_to_try = field_mapping.get(field, [field])
+        
+        for f in fields_to_try:
+            if f in df.columns:
+                return df[f].dropna().unique().tolist()
+        
         return []
-    except Exception:
+    except Exception as e:
+        print(f"Error getting unique values: {e}")
         return []
