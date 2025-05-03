@@ -1,0 +1,16 @@
+fastapi==0.115.9
+uvicorn[standard]==0.34.2
+openai==1.77.0
+python-dotenv==1.1.0
+pandas==2.2.3
+
+# PostgreSQL & ORM
+sqlalchemy==2.0.40
+asyncpg==0.30.0
+databases==0.9.0  # Optional: Async DB toolkit compatible with SQLAlchemy
+chromadb==1.0.7
+
+# Clerk Authentication (JWT verification)
+httpx==0.28.1  # For making HTTP requests to Clerk APIs if needed
+python-jose==3.4.0  # For JWT validation
+requests==2.32.3
